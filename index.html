@@ -1,0 +1,893 @@
+// v10 - Firebase Realtime Database
+import { useState, useEffect, useRef } from “react”;
+
+// ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
+const FIREBASE_URL = “https://squad-tracker-56cc5-default-rtdb.europe-west1.firebasedatabase.app”;
+
+async function fbGet(path) {
+try {
+const res = await fetch(`${FIREBASE_URL}/${path}.json`);
+if (!res.ok) return null;
+return await res.json();
+} catch { return null; }
+}
+
+async function fbSet(path, data) {
+try {
+await fetch(`${FIREBASE_URL}/${path}.json`, {
+method: “PUT”,
+headers: { “Content-Type”: “application/json” },
+body: JSON.stringify(data),
+});
+} catch (e) { console.error(“FB write error:”, e); }
+}
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const PLAYER_COLORS = [”#FF6B9D”,”#00C9FF”,”#A8E6CF”,”#FFD700”,”#FF8C42”,”#C3B1E1”,”#66FFB2”,”#FF9F7F”];
+
+const TRAINING_ACTIONS = [
+{ label:“✅ Attended”,         category:“attendance”,    pts:5, color:”#A8E6CF” },
+{ label:“💪 Great Effort”,     category:“effort”,        pts:2, color:”#00C9FF” },
+{ label:“📈 Improved Today”,   category:“improvement”,   pts:3, color:”#C3B1E1” },
+{ label:“🤝 Sportsmanship”,    category:“sportsmanship”, pts:2, color:”#FF6B9D” },
+{ label:“🎯 Helped Teammates”, category:“sportsmanship”, pts:2, color:”#FFD700” },
+{ label:“👂 Listened Well”,    category:“effort”,        pts:1, color:”#FF8C42” },
+];
+
+const ADMIN_NAV = [
+{ id:“dashboard”, icon:“🏆”, label:“Board”   },
+{ id:“awards”,    icon:“⭐”,  label:“Leaders” },
+{ id:“squad”,     icon:“👥”,  label:“Squad”   },
+];
+const PLAYER_NAV = [
+{ id:“dashboard”, icon:“🏆”, label:“Board”   },
+{ id:“profile”,   icon:“👤”,  label:“My Page” },
+{ id:“awards”,    icon:“⭐”,  label:“Leaders” },
+];
+
+const todayStr = () => new Date().toISOString().slice(0,10);
+const fmtDate  = iso => iso ? new Date(iso+“T12:00:00”).toLocaleDateString() : new Date().toLocaleDateString();
+
+const defaultStats = () => ({
+points:0, attendance:0, matchAttendance:0, goals:0, assists:0,
+cleanSheets:0, sportsmanship:0, effort:0, improvement:0,
+potmCount:0, totwCount:0, badges:[], history:[],
+});
+
+const DEFAULT_PLAYERS = [
+{ id:1, name:“Alex Morgan”,  number:7,  stats:defaultStats() },
+{ id:2, name:“Jamie Torres”, number:10, stats:defaultStats() },
+{ id:3, name:“Sam Riley”,    number:4,  stats:defaultStats() },
+{ id:4, name:“Chris Park”,   number:9,  stats:defaultStats() },
+{ id:5, name:“Jordan Lee”,   number:3,  stats:defaultStats() },
+{ id:6, name:“Taylor Evans”, number:1,  stats:defaultStats() },
+];
+
+const DEFAULT_USERS = [
+{ id:“admin”, username:“coach”, password:“squad2025”, role:“admin”, playerId:null },
+];
+
+function simpleHash(str) {
+let h = 0x811c9dc5;
+for (let i=0;i<str.length;i++) { h^=str.charCodeAt(i); h=(h*0x01000193)>>>0; }
+return h.toString(16);
+}
+
+// ─── COMPONENT ────────────────────────────────────────────────────────────────
+export default function SoccerTracker() {
+
+// ── All hooks first ──
+const [ready,          setReady]          = useState(false);
+const [saving,         setSaving]         = useState(false);
+const [session,        setSession]        = useState(null);
+const [users,          setUsers]          = useState(DEFAULT_USERS);
+const [players,        setPlayers]        = useState(DEFAULT_PLAYERS);
+const [potmId,         setPotmId]         = useState(null);
+const [totwId,         setTotwId]         = useState(null);
+const [totwLog,        setTotwLog]        = useState([]);
+const [matchLog,       setMatchLog]       = useState([]);
+const [trainingLog,    setTrainingLog]    = useState([]);
+const [view,           setView]           = useState(“dashboard”);
+const [selected,       setSelected]       = useState(null);
+const [expandedPlayer, setExpandedPlayer] = useState(null);
+const [awardModal,     setAwardModal]     = useState(false);
+const [toast,          setToast]          = useState(null);
+const [trainingMode,   setTrainingMode]   = useState(false);
+const [trainingVenue,  setTrainingVenue]  = useState(””);
+const [trainingDate,   setTrainingDate]   = useState(todayStr);
+const [trainingStats,  setTrainingStats]  = useState({});
+const [matchMode,      setMatchMode]      = useState(false);
+const [matchStats,     setMatchStats]     = useState({});
+const [opposition,     setOpposition]     = useState(””);
+const [matchDate,      setMatchDate]      = useState(todayStr);
+const [newName,        setNewName]        = useState(””);
+const [newNum,         setNewNum]         = useState(””);
+const [newUsername,    setNewUsername]    = useState(””);
+const [newPassword,    setNewPassword]    = useState(””);
+const [newLinkedId,    setNewLinkedId]    = useState(””);
+const [loginUser,      setLoginUser]      = useState(””);
+const [loginPass,      setLoginPass]      = useState(””);
+const [loginErr,       setLoginErr]       = useState(””);
+const [changePwFor,    setChangePwFor]    = useState(null);
+const [changePwNew,    setChangePwNew]    = useState(””);
+const [changePwErr,    setChangePwErr]    = useState(””);
+
+const saveTimer = useRef(null);
+
+// ── Load from Firebase on mount ──
+useEffect(() => {
+(async () => {
+const [data, usersData] = await Promise.all([
+fbGet(“data”),
+fbGet(“users”),
+]);
+if (data) {
+if (data.players)     setPlayers(data.players);
+if (data.potmId)      setPotmId(data.potmId);
+if (data.totwId)      setTotwId(data.totwId);
+if (data.totwLog)     setTotwLog(data.totwLog);
+if (data.matchLog)    setMatchLog(data.matchLog);
+if (data.trainingLog) setTrainingLog(data.trainingLog);
+}
+if (usersData?.users)   setUsers(usersData.users);
+
+```
+  // Restore session from sessionStorage (tab-level only)
+  try {
+    const s = sessionStorage.getItem("sq-session");
+    if (s) setSession(JSON.parse(s));
+  } catch {}
+
+  setReady(true);
+})();
+```
+
+}, []);
+
+// ── Debounced save to Firebase ──
+const scheduleDataSave = (newState) => {
+if (saveTimer.current) clearTimeout(saveTimer.current);
+setSaving(true);
+saveTimer.current = setTimeout(async () => {
+await fbSet(“data”, newState);
+setSaving(false);
+}, 1200);
+};
+
+// ── Persist session to sessionStorage ──
+useEffect(() => {
+try {
+if (session) sessionStorage.setItem(“sq-session”, JSON.stringify(session));
+else sessionStorage.removeItem(“sq-session”);
+} catch {}
+}, [session]);
+
+// ── Helpers ──
+const showToast = (msg, color=”#00C9FF”) => {
+setToast({ msg, color });
+setTimeout(() => setToast(null), 2600);
+};
+
+const getColor  = id => PLAYER_COLORS[players.findIndex(p=>p.id===id) % PLAYER_COLORS.length];
+const isAdmin   = session?.role === “admin”;
+const sorted    = […players].sort((a,b) => b.stats.points - a.stats.points);
+const inEvent   = matchMode || trainingMode;
+const myPlayer  = session?.playerId ? players.find(p=>p.id===session.playerId) : null;
+const NAV       = isAdmin ? ADMIN_NAV : PLAYER_NAV;
+
+// Helper: update players + schedule save
+const updatePlayers = (newPlayers, extra = {}) => {
+setPlayers(newPlayers);
+scheduleDataSave({
+players: newPlayers,
+potmId: extra.potmId ?? potmId,
+totwId: extra.totwId ?? totwId,
+totwLog: extra.totwLog ?? totwLog,
+matchLog: extra.matchLog ?? matchLog,
+trainingLog: extra.trainingLog ?? trainingLog,
+});
+};
+
+const updateMeta = (patch) => {
+const next = {
+players,
+potmId: patch.potmId ?? potmId,
+totwId: patch.totwId ?? totwId,
+totwLog: patch.totwLog ?? totwLog,
+matchLog: patch.matchLog ?? matchLog,
+trainingLog: patch.trainingLog ?? trainingLog,
+};
+if (patch.potmId !== undefined) setPotmId(patch.potmId);
+if (patch.totwId !== undefined) setTotwId(patch.totwId);
+if (patch.totwLog !== undefined) setTotwLog(patch.totwLog);
+if (patch.matchLog !== undefined) setMatchLog(patch.matchLog);
+if (patch.trainingLog !== undefined) setTrainingLog(patch.trainingLog);
+scheduleDataSave(next);
+};
+
+// ── Auth ──
+const handleLogin = () => {
+setLoginErr(””);
+const u = users.find(u=>u.username.toLowerCase()===loginUser.trim().toLowerCase());
+if (!u) { setLoginErr(“Username not found.”); return; }
+if (u.password !== simpleHash(loginPass) && u.password !== loginPass) { setLoginErr(“Incorrect password.”); return; }
+setSession({ userId:u.id, role:u.role, playerId:u.playerId, username:u.username });
+setLoginUser(””); setLoginPass(””);
+};
+
+const handleLogout = () => {
+setSession(null); setView(“dashboard”);
+setTrainingMode(false); setMatchMode(false);
+};
+
+const addUserAccount = () => {
+if (!newUsername.trim()||!newPassword.trim()) { showToast(“Name and password required.”,”#FF6B6B”); return; }
+if (users.find(u=>u.username.toLowerCase()===newUsername.trim().toLowerCase())) { showToast(“Username already exists.”,”#FF6B6B”); return; }
+const nu = { id:`u${Date.now()}`, username:newUsername.trim(), password:simpleHash(newPassword.trim()), role:newLinkedId?“player”:“admin”, playerId:newLinkedId?parseInt(newLinkedId):null };
+const next = […users, nu];
+setUsers(next);
+fbSet(“users”, { users: next });
+setNewUsername(””); setNewPassword(””); setNewLinkedId(””);
+showToast(`Account for ${nu.username} created!`,”#A8E6CF”);
+};
+
+const removeUser = id => {
+const next = users.filter(u=>u.id!==id);
+setUsers(next);
+fbSet(“users”, { users: next });
+};
+
+const saveChangePw = uid => {
+if (!changePwNew.trim()||changePwNew.trim().length<4) { setChangePwErr(“Min 4 characters.”); return; }
+const next = users.map(u=>u.id===uid?{…u,password:simpleHash(changePwNew.trim())}:u);
+setUsers(next);
+fbSet(“users”, { users: next });
+setChangePwFor(null); setChangePwNew(””); setChangePwErr(””);
+showToast(“Password updated!”,”#A8E6CF”);
+};
+
+// ── Squad ──
+const addPlayer = () => {
+if (!newName.trim()) return;
+const p = { id:Date.now(), name:newName.trim(), number:newNum||”?”, stats:defaultStats() };
+const next = […players, p];
+updatePlayers(next);
+setNewName(””); setNewNum(””);
+showToast(`${p.name} added!`,”#A8E6CF”);
+};
+
+const removePlayer = id => {
+const next = players.filter(p=>p.id!==id);
+updatePlayers(next);
+if (selected?.id===id) setSelected(null);
+};
+
+// ── Training ──
+const toggleTraining = (pid, action) => {
+setTrainingStats(prev=>{ const ps=prev[pid]||{}; return {…prev,[pid]:{…ps,[action.label]:!ps[action.label]}}; });
+};
+
+const saveTraining = () => {
+const venue = trainingVenue.trim()||“Training”;
+const dateStr = fmtDate(trainingDate);
+const logEntry = { venue, date:dateStr, players:[] };
+const newPlayers = players.map(p=>{
+const ts=trainingStats[p.id]; if (!ts) return p;
+const s={…p.stats}; const entries=[]; let total=0;
+TRAINING_ACTIONS.forEach(a=>{
+if (ts[a.label]) { s.points+=a.pts; s[a.category]=(s[a.category]||0)+a.pts; total+=a.pts; entries.push({label:`${a.label} @ ${venue}`,amount:a.pts,date:dateStr,type:“T”}); }
+});
+if (!entries.length) return p;
+logEntry.players.push({name:p.name,pts:total});
+s.history=[…entries,…(s.history||[]).slice(0,20-entries.length)];
+return {…p,stats:s};
+});
+const newTrainingLog = [logEntry, …trainingLog];
+setTrainingLog(newTrainingLog);
+updatePlayers(newPlayers, { trainingLog: newTrainingLog });
+setTrainingMode(false); setTrainingStats({}); setTrainingVenue(””); setTrainingDate(todayStr());
+showToast(`Training @ ${venue} saved! 🏋️`,”#C3B1E1”);
+};
+
+// ── Match ──
+const saveMatch = () => {
+const opp=opposition.trim()||“Unknown”;
+const dateStr=fmtDate(matchDate);
+const logEntry={opposition:opp,date:dateStr,players:[]};
+const newPlayers = players.map(p=>{
+const ms=matchStats[p.id]; if (!ms) return p;
+const s={…p.stats};
+const attended=!!ms.attended,g=parseInt(ms.goals)||0,a=parseInt(ms.assists)||0,cs=!!ms.cleanSheet;
+const ap=attended?5:0,gp=g*8,asp=a*5,csp=cs?5:0,total=ap+gp+asp+csp;
+if (attended||g>0||a>0||cs) logEntry.players.push({name:p.name,attended,goals:g,assists:a,cleanSheet:cs,pts:total});
+if (!total) return p;
+s.matchAttendance=(s.matchAttendance||0)+(attended?1:0); s.goals+=g; s.assists+=a; s.cleanSheets=(s.cleanSheets||0)+(cs?1:0); s.points+=total;
+const entries=[
+…(attended?[{label:`Attended vs ${opp} 🏟️`,amount:ap,date:dateStr,type:“M”}]:[]),
+…(g>0?[{label:`${g} Goal(s) vs ${opp} ⚽`,amount:gp,date:dateStr,type:“M”}]:[]),
+…(a>0?[{label:`${a} Assist(s) vs ${opp} 🎯`,amount:asp,date:dateStr,type:“M”}]:[]),
+…(cs?[{label:`Clean Sheet vs ${opp} 🧤`,amount:csp,date:dateStr,type:“M”}]:[]),
+];
+s.history=[…entries,…(s.history||[]).slice(0,20-entries.length)];
+return {…p,stats:s};
+});
+const newMatchLog = [logEntry, …matchLog];
+setMatchLog(newMatchLog);
+updatePlayers(newPlayers, { matchLog: newMatchLog });
+setMatchMode(false); setMatchStats({}); setOpposition(””); setMatchDate(todayStr());
+showToast(`Match vs ${opp} saved! ⚽`,”#A8E6CF”);
+};
+
+// ── Awards ──
+const assignAward = (pid, type) => {
+const isP=type===“potm”;
+const bonus=isP?15:10;
+const label=isP?“Player of the Match 🏆”:“Trainer of the Week 💪”;
+const winner=players.find(p=>p.id===pid);
+const newTotwLog = !isP&&winner ? [{name:winner.name,date:new Date().toLocaleDateString()},…totwLog] : totwLog;
+const newPlayers = players.map(p=>{
+if (p.id!==pid) return p;
+const s={…p.stats};
+s[isP?“potmCount”:“totwCount”]=(s[isP?“potmCount”:“totwCount”]||0)+1;
+s.points+=bonus;
+if (!s.badges.includes(type)) s.badges=[…s.badges,type];
+s.history=[{label,amount:bonus,date:new Date().toLocaleDateString(),type:“A”},…(s.history||[]).slice(0,19)];
+return {…p,stats:s};
+});
+const patch = isP ? { potmId: pid, totwLog: newTotwLog } : { totwId: pid, totwLog: newTotwLog };
+if (isP) setPotmId(pid); else setTotwId(pid);
+if (!isP && winner) setTotwLog(newTotwLog);
+updatePlayers(newPlayers, { …patch });
+showToast(isP?“⭐ Player of the Match!”:“🏋️ Trainer of the Week!”,isP?”#FFD700”:”#00C9FF”);
+setAwardModal(false);
+};
+
+// ─── STYLES ──────────────────────────────────────────────────────────────────
+const S = {
+app:      { maxWidth:390,margin:“0 auto”,minHeight:“100vh”,background:“linear-gradient(160deg,#07101f 0%,#0c1e3a 60%,#081528 100%)”,fontFamily:”‘Georgia’,serif”,color:”#e8f4f8”,display:“flex”,flexDirection:“column”,overflowX:“hidden” },
+header:   { background:“linear-gradient(90deg,#002a55,#004a8f,#002a55)”,borderBottom:“2px solid #00C9FF”,padding:“14px 16px 10px”,display:“flex”,alignItems:“center”,justifyContent:“space-between”,flexShrink:0,boxShadow:“0 3px 20px rgba(0,201,255,0.18)” },
+hTitle:   { fontSize:17,fontWeight:“bold”,letterSpacing:“2px”,color:”#fff”,textShadow:“0 0 16px rgba(0,201,255,0.7)” },
+hSub:     { fontSize:10,color:”#7aa8c8”,letterSpacing:“1px”,marginTop:1 },
+scroll:   { flex:1,overflowY:“auto”,padding:“14px 14px 90px”,WebkitOverflowScrolling:“touch” },
+bnav:     { position:“fixed”,bottom:0,left:“50%”,transform:“translateX(-50%)”,width:“100%”,maxWidth:390,background:“rgba(7,16,31,0.97)”,borderTop:“1.5px solid rgba(0,201,255,0.2)”,display:“flex”,zIndex:50,backdropFilter:“blur(12px)” },
+nItem:    a=>({ flex:1,display:“flex”,flexDirection:“column”,alignItems:“center”,padding:“10px 0 12px”,cursor:“pointer”,gap:2,borderTop:a?“2px solid #00C9FF”:“2px solid transparent”,background:a?“rgba(0,201,255,0.06)”:“transparent”,WebkitTapHighlightColor:“transparent” }),
+nLabel:   a=>({ fontSize:10,color:a?”#00C9FF”:”#4a7090”,fontWeight:a?“bold”:“normal”,letterSpacing:“0.5px” }),
+card:     { background:“rgba(255,255,255,0.04)”,border:“1px solid rgba(0,201,255,0.12)”,borderRadius:14,padding:14,marginBottom:12 },
+sLbl:     { fontSize:10,letterSpacing:“2px”,color:”#5a88a8”,marginBottom:10,textTransform:“uppercase” },
+pRow:     top=>({ display:“flex”,alignItems:“center”,gap:11,padding:“11px 12px”,borderRadius:12,marginBottom:8,background:top?“linear-gradient(90deg,rgba(255,215,0,0.08),rgba(255,215,0,0.02))”:“rgba(255,255,255,0.03)”,border:top?“1px solid rgba(255,215,0,0.25)”:“1px solid rgba(255,255,255,0.05)”,cursor:“pointer”,WebkitTapHighlightColor:“transparent” }),
+avatar:   c=>({ width:38,height:38,borderRadius:“50%”,background:c,display:“flex”,alignItems:“center”,justifyContent:“center”,fontWeight:“bold”,fontSize:15,color:”#fff”,flexShrink:0,boxShadow:`0 0 10px ${c}55` }),
+rank:     i=>({ width:22,height:22,borderRadius:“50%”,background:i===0?”#FFD700”:i===1?”#C0C0C0”:i===2?”#CD7F32”:”#152a40”,display:“flex”,alignItems:“center”,justifyContent:“center”,fontSize:11,fontWeight:“bold”,color:i<3?”#000”:”#5a88a8”,flexShrink:0 }),
+badge:    c=>({ background:c+“22”,border:`1px solid ${c}55`,borderRadius:10,padding:“2px 6px”,fontSize:10,color:c }),
+btn:      (c=”#00C9FF”,sm=false)=>({ background:“transparent”,border:`1.5px solid ${c}`,color:c,borderRadius:8,padding:sm?“5px 11px”:“9px 18px”,cursor:“pointer”,fontSize:sm?12:13,fontWeight:“bold”,WebkitTapHighlightColor:“transparent”,touchAction:“manipulation” }),
+btnFill:  c=>({ background:c,border:“none”,color:”#000”,borderRadius:8,padding:“9px 18px”,cursor:“pointer”,fontSize:13,fontWeight:“bold”,WebkitTapHighlightColor:“transparent”,touchAction:“manipulation” }),
+input:    { background:“rgba(255,255,255,0.07)”,border:“1px solid rgba(0,201,255,0.2)”,borderRadius:8,color:”#e8f4f8”,padding:“9px 11px”,fontSize:15,outline:“none”,width:“100%”,boxSizing:“border-box”,WebkitAppearance:“none” },
+modal:    { position:“fixed”,inset:0,background:“rgba(0,0,0,0.78)”,display:“flex”,alignItems:“flex-end”,justifyContent:“center”,zIndex:100 },
+modalBox: { background:”#0a1828”,border:“1px solid rgba(0,201,255,0.25)”,borderRadius:“20px 20px 0 0”,padding:“20px 16px 36px”,width:“100%”,maxWidth:390,maxHeight:“80vh”,overflowY:“auto” },
+handle:   { width:40,height:4,borderRadius:2,background:“rgba(255,255,255,0.15)”,margin:“0 auto 16px” },
+};
+
+// ─── EARLY RETURNS (all hooks above) ────────────────────────────────────────
+if (!ready) return (
+<div style={{…S.app,alignItems:“center”,justifyContent:“center”,gap:16}}>
+<div style={{fontSize:40}}>⚽</div>
+<div style={{color:”#00C9FF”,fontSize:14,letterSpacing:2}}>LOADING…</div>
+</div>
+);
+
+if (!session) return (
+<div style={{…S.app,alignItems:“center”,justifyContent:“center”,padding:“24px”}}>
+<div style={{width:“100%”,maxWidth:340}}>
+<div style={{textAlign:“center”,marginBottom:32}}>
+<div style={{fontSize:52,marginBottom:10}}>⚽</div>
+<div style={{fontSize:22,fontWeight:“bold”,letterSpacing:“3px”,color:”#fff”,textShadow:“0 0 20px rgba(0,201,255,0.7)”}}>SQUAD TRACKER</div>
+<div style={{fontSize:11,color:”#5a88a8”,letterSpacing:“2px”,marginTop:4}}>SEASON 2025/26</div>
+</div>
+<div style={{background:“rgba(255,255,255,0.04)”,border:“1px solid rgba(0,201,255,0.15)”,borderRadius:18,padding:“24px 20px”}}>
+<p style={S.sLbl}>Sign In</p>
+<div style={{display:“flex”,flexDirection:“column”,gap:10}}>
+<input placeholder=“Username” style={S.input} value={loginUser} autoCapitalize=“none”
+onChange={e=>{setLoginUser(e.target.value);setLoginErr(””);}}
+onKeyDown={e=>e.key===“Enter”&&handleLogin()} />
+<input placeholder=“Password” type=“password” style={S.input} value={loginPass}
+onChange={e=>{setLoginPass(e.target.value);setLoginErr(””);}}
+onKeyDown={e=>e.key===“Enter”&&handleLogin()} />
+{loginErr && <div style={{fontSize:12,color:”#FF6B6B”,padding:“4px 2px”}}>{loginErr}</div>}
+<button style={{…S.btnFill(”#00C9FF”),width:“100%”,padding:“12px”,fontSize:14,marginTop:4}} onClick={handleLogin}>Sign In</button>
+</div>
+</div>
+<div style={{textAlign:“center”,fontSize:11,color:”#3a5870”,marginTop:16}}>Contact your coach if you’ve forgotten your password.</div>
+</div>
+</div>
+);
+
+// ─── RENDER HELPERS ──────────────────────────────────────────────────────────
+const renderProfile = (player) => {
+if (!player) return <div style={{color:”#5a88a8”,fontSize:13,textAlign:“center”,padding:24}}>Profile not linked. Ask your coach.</div>;
+const live = players.find(p=>p.id===player.id)||player;
+return (<>
+<div style={{…S.card,display:“flex”,alignItems:“center”,gap:12}}>
+<div style={S.avatar(getColor(live.id))}>{live.name[0]}</div>
+<div>
+<div style={{fontWeight:“bold”,fontSize:16}}>{live.name}</div>
+<div style={{color:”#5a88a8”,fontSize:12}}>#{live.number} · {live.stats.points} pts</div>
+</div>
+</div>
+<div style={S.card}>
+<p style={S.sLbl}>Season Stats</p>
+<div style={{display:“grid”,gridTemplateColumns:“1fr 1fr”,gap:8}}>
+{[
+[“⚽”,“Goals”,             live.stats.goals],
+[“🎯”,“Assists”,           live.stats.assists],
+[“🧤”,“Clean Sheets”,      live.stats.cleanSheets||0],
+[“📅”,“Training Sessions”, Math.round((live.stats.attendance||0)/5)||0],
+[“🏟️”,“Matches Attended”,  live.stats.matchAttendance||0],
+[“⭐”,“POTM Awards”,       live.stats.potmCount],
+[“🏋️”,“TOTW Awards”,       live.stats.totwCount],
+[“💪”,“Effort Pts”,        live.stats.effort||0],
+].map(([icon,label,val])=>(
+<div key={label} style={{display:“flex”,alignItems:“center”,gap:8,padding:“8px 10px”,background:“rgba(0,201,255,0.04)”,borderRadius:10}}>
+<span style={{fontSize:16}}>{icon}</span>
+<div>
+<div style={{fontSize:15,fontWeight:“bold”,color:”#00C9FF”}}>{val}</div>
+<div style={{fontSize:10,color:”#5a88a8”}}>{label}</div>
+</div>
+</div>
+))}
+</div>
+</div>
+{(live.stats.history?.length||0)>0 && (
+<div style={S.card}>
+<p style={S.sLbl}>Recent Activity</p>
+{live.stats.history.slice(0,12).map((h,i)=>{
+const tc=h.type===“M”?”#A8E6CF”:h.type===“T”?”#C3B1E1”:”#FFD700”;
+const tb=h.type===“M”?“rgba(168,230,207,0.1)”:h.type===“T”?“rgba(195,177,225,0.1)”:“rgba(255,215,0,0.1)”;
+return (
+<div key={i} style={{padding:“8px 0”,borderBottom:“1px solid rgba(255,255,255,0.04)”}}>
+<div style={{display:“flex”,alignItems:“center”,gap:6,fontSize:12}}>
+<span style={{flexShrink:0,fontWeight:“bold”,fontSize:10,background:tb,border:`1px solid ${tc}55`,color:tc,borderRadius:6,padding:“2px 7px”,minWidth:18,textAlign:“center”}}>{h.type||”—”}</span>
+<span style={{color:”#b0cfe0”,flex:1,marginRight:8}}>{h.label}</span>
+<span style={{color:”#A8E6CF”,fontWeight:“bold”,flexShrink:0}}>+{h.amount}</span>
+</div>
+<div style={{fontSize:10,color:”#5a88a8”,marginTop:2,marginLeft:30}}>{h.date}</div>
+</div>
+);
+})}
+</div>
+)}
+</>);
+};
+
+const renderLeadersBoard = () => (<>
+<p style={S.sLbl}>Leaders Board</p>
+<div style={{…S.card,padding:“10px 14px”,marginBottom:12}}>
+<p style={{...S.sLbl,marginBottom:8}}>Legend</p>
+<div style={{display:“grid”,gridTemplateColumns:“1fr 1fr”,gap:“6px 16px”}}>
+{[
+[“⭐”,“Player of the Match”],[“🏋️”,“Trainer of the Week”],
+[“⚽”,“Goals”],[“🎯”,“Assists”],[“🧤”,“Clean Sheets”],
+[“📅”,“Training Sessions”],[“🏟️”,“Matches Attended”],[“💪”,“Effort Points”],
+].map(([icon,label])=>(
+<div key={label} style={{display:“flex”,alignItems:“center”,gap:7,fontSize:12}}>
+<span>{icon}</span><span style={{color:”#7aa8c8”}}>{label}</span>
+</div>
+))}
+</div>
+</div>
+<div style={S.card}>
+<p style={S.sLbl}>All-Time Leaders</p>
+{sorted.map(p=>{
+const exp=expandedPlayer===p.id;
+return (
+<div key={p.id} style={{borderBottom:“1px solid rgba(255,255,255,0.04)”}}>
+<div onClick={()=>setExpandedPlayer(exp?null:p.id)}
+style={{display:“flex”,alignItems:“center”,gap:10,padding:“10px 0”,cursor:“pointer”,WebkitTapHighlightColor:“transparent”}}>
+<div style={S.avatar(getColor(p.id))}>{p.name[0]}</div>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontWeight:“bold”,fontSize:13,overflow:“hidden”,textOverflow:“ellipsis”,whiteSpace:“nowrap”}}>{p.name}</div>
+<div style={{display:“flex”,gap:6,marginTop:2,flexWrap:“wrap”}}>
+{p.stats.potmCount>0   && <span style={{fontSize:11,color:”#FFD700”}}>⭐{p.stats.potmCount}</span>}
+{p.stats.totwCount>0   && <span style={{fontSize:11,color:”#00C9FF”}}>🏋️{p.stats.totwCount}</span>}
+{p.stats.goals>0       && <span style={{fontSize:11,color:”#A8E6CF”}}>⚽{p.stats.goals}</span>}
+{p.stats.cleanSheets>0 && <span style={{fontSize:11,color:”#66FFB2”}}>🧤{p.stats.cleanSheets}</span>}
+</div>
+</div>
+<div style={{display:“flex”,alignItems:“center”,gap:6}}>
+<div style={{textAlign:“right”}}>
+<div style={{fontSize:18,fontWeight:“bold”,color:”#00C9FF”}}>{p.stats.points}</div>
+<div style={{fontSize:10,color:”#5a88a8”}}>pts</div>
+</div>
+<div style={{fontSize:11,color:”#3a5870”}}>{exp?“▲”:“▼”}</div>
+</div>
+</div>
+{exp && (
+<div style={{display:“grid”,gridTemplateColumns:“1fr 1fr 1fr”,gap:6,paddingBottom:12}}>
+{[
+[“⭐”,”#FFD700”,“POTM”,    p.stats.potmCount],
+[“🏋️”,”#00C9FF”,“TOTW”,    p.stats.totwCount],
+[“⚽”,”#A8E6CF”,“Goals”,   p.stats.goals],
+[“🎯”,”#FFD700”,“Assists”, p.stats.assists],
+[“🧤”,”#66FFB2”,“Clean Sh”,p.stats.cleanSheets||0],
+[“📅”,”#C3B1E1”,“Training”,Math.round((p.stats.attendance||0)/5)||0],
+[“🏟️”,”#FF8C42”,“Matches”, p.stats.matchAttendance||0],
+[“💪”,”#00C9FF”,“Effort”,  p.stats.effort||0],
+[“📈”,”#C3B1E1”,“Improve”, p.stats.improvement||0],
+].map(([icon,color,label,val])=>(
+<div key={label} style={{textAlign:“center”,padding:“8px 4px”,background:“rgba(255,255,255,0.03)”,borderRadius:8}}>
+<div style={{fontSize:14}}>{icon}</div>
+<div style={{fontSize:14,fontWeight:“bold”,color}}>{val}</div>
+<div style={{fontSize:9,color:”#5a88a8”,marginTop:1}}>{label}</div>
+</div>
+))}
+</div>
+)}
+</div>
+);
+})}
+</div>
+{totwLog.length>0 && (
+<div style={S.card}>
+<p style={S.sLbl}>🏋️ Trainer of the Week History</p>
+{totwLog.map((e,i)=>(
+<div key={i} style={{display:“flex”,justifyContent:“space-between”,alignItems:“center”,padding:“7px 0”,borderBottom:“1px solid rgba(255,255,255,0.04)”}}>
+<span style={{fontWeight:“bold”,fontSize:13}}>{e.name}</span>
+<span style={{color:”#5a88a8”,fontSize:11}}>{e.date}</span>
+</div>
+))}
+</div>
+)}
+{trainingLog.length>0 && (
+<div style={S.card}>
+<p style={S.sLbl}>📋 Training Log</p>
+{trainingLog.map((t,i)=>(
+<div key={i} style={{marginBottom:i<trainingLog.length-1?14:0}}>
+<div style={{display:“flex”,justifyContent:“space-between”,alignItems:“center”,marginBottom:6}}>
+<span style={{fontWeight:“bold”,color:”#C3B1E1”,fontSize:13}}>🏋️ {t.venue}</span>
+<span style={{color:”#5a88a8”,fontSize:11}}>{t.date}</span>
+</div>
+{t.players.length===0
+? <div style={{fontSize:11,color:”#5a88a8”}}>No points awarded</div>
+: t.players.map((pl,j)=>(
+<div key={j} style={{display:“flex”,justifyContent:“space-between”,padding:“5px 0”,borderBottom:“1px solid rgba(255,255,255,0.03)”,fontSize:12}}>
+<span style={{color:”#b0cfe0”}}>{pl.name}</span>
+<span style={{color:”#C3B1E1”,fontWeight:“bold”}}>+{pl.pts} pts</span>
+</div>
+))}
+{i<trainingLog.length-1 && <div style={{borderBottom:“1px solid rgba(255,255,255,0.08)”,marginTop:10}} />}
+</div>
+))}
+</div>
+)}
+{matchLog.length>0 && (
+<div style={S.card}>
+<p style={S.sLbl}>📋 Match Log</p>
+{matchLog.map((m,i)=>(
+<div key={i} style={{marginBottom:i<matchLog.length-1?14:0}}>
+<div style={{display:“flex”,justifyContent:“space-between”,alignItems:“center”,marginBottom:6}}>
+<span style={{fontWeight:“bold”,color:”#00C9FF”,fontSize:13}}>vs {m.opposition}</span>
+<span style={{color:”#5a88a8”,fontSize:11}}>{m.date}</span>
+</div>
+{m.players.length===0
+? <div style={{fontSize:11,color:”#5a88a8”}}>No stats recorded</div>
+: m.players.map((pl,j)=>(
+<div key={j} style={{display:“flex”,alignItems:“center”,gap:6,padding:“5px 0”,borderBottom:“1px solid rgba(255,255,255,0.03)”,fontSize:12}}>
+<span style={{flex:1,color:”#b0cfe0”,overflow:“hidden”,textOverflow:“ellipsis”,whiteSpace:“nowrap”}}>{pl.name}</span>
+<div style={{display:“flex”,gap:5,flexShrink:0}}>
+{pl.attended   && <span style={{color:”#A8E6CF”}}>🏟️</span>}
+{pl.goals>0    && <span style={{color:”#A8E6CF”}}>⚽{pl.goals}</span>}
+{pl.assists>0  && <span style={{color:”#FFD700”}}>🎯{pl.assists}</span>}
+{pl.cleanSheet && <span style={{color:”#66FFB2”}}>🧤</span>}
+<span style={{color:”#00C9FF”,fontWeight:“bold”}}>+{pl.pts}</span>
+</div>
+</div>
+))}
+{i<matchLog.length-1 && <div style={{borderBottom:“1px solid rgba(255,255,255,0.08)”,marginTop:10}} />}
+</div>
+))}
+</div>
+)}
+</>);
+
+// ─── MAIN RENDER ─────────────────────────────────────────────────────────────
+return (
+<div style={S.app}>
+
+```
+  <div style={S.header}>
+    <div>
+      <div style={S.hTitle}>⚽ SQUAD TRACKER</div>
+      <div style={S.hSub}>
+        {session.username.toUpperCase()} · {isAdmin?"ADMIN":"PLAYER"}
+        {saving && <span style={{marginLeft:8,color:"#5a88a8"}}>· saving…</span>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+      <button style={S.btn("#FF6B6B",true)} onClick={handleLogout}>Sign Out</button>
+    </div>
+  </div>
+
+  <div style={S.scroll}>
+
+    {/* ── DASHBOARD ── */}
+    {view==="dashboard" && !inEvent && (<>
+      {isAdmin && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+          <button
+            style={{background:"rgba(195,177,225,0.1)",border:"2px solid #C3B1E1",borderRadius:14,color:"#C3B1E1",padding:"20px 12px",cursor:"pointer",fontSize:15,fontWeight:"bold",letterSpacing:"1px",WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}
+            onClick={()=>{setTrainingMode(true);setMatchMode(false);}}>
+            🏋️<br/>+ Training
+          </button>
+          <button
+            style={{background:"rgba(168,230,207,0.1)",border:"2px solid #A8E6CF",borderRadius:14,color:"#A8E6CF",padding:"20px 12px",cursor:"pointer",fontSize:15,fontWeight:"bold",letterSpacing:"1px",WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}
+            onClick={()=>{setMatchMode(true);setTrainingMode(false);}}>
+            ⚽<br/>+ Match
+          </button>
+        </div>
+      )}
+      <div style={S.card}>
+        <p style={S.sLbl}>Team Stats</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {[
+            ["⚽","Goals",        players.reduce((s,p)=>s+p.stats.goals,0)],
+            ["🎯","Assists",      players.reduce((s,p)=>s+p.stats.assists,0)],
+            ["🧤","Clean Sheets", players.reduce((s,p)=>s+(p.stats.cleanSheets||0),0)],
+            ["📅","Training",     players.reduce((s,p)=>s+p.stats.attendance,0)],
+            ["🏟️","Matches",      players.reduce((s,p)=>s+(p.stats.matchAttendance||0),0)],
+            ["💪","Effort",       players.reduce((s,p)=>s+p.stats.effort,0)],
+          ].map(([icon,label,val])=>(
+            <div key={label} style={{textAlign:"center",padding:"10px 4px",background:"rgba(0,201,255,0.04)",borderRadius:10}}>
+              <div style={{fontSize:16}}>{icon}</div>
+              <div style={{fontSize:18,fontWeight:"bold",color:"#00C9FF"}}>{val}</div>
+              <div style={{fontSize:10,color:"#5a88a8",marginTop:1}}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>)}
+
+    {/* ── TRAINING MODE ── */}
+    {isAdmin && trainingMode && (<>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <p style={{...S.sLbl,margin:0,color:"#C3B1E1"}}>🏋️ Log Training Session</p>
+        <button style={S.btn("#7aa8c8",true)} onClick={()=>{setTrainingMode(false);setTrainingStats({});}}>Cancel</button>
+      </div>
+      <div style={{...S.card,display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:10,color:"#5a88a8",marginBottom:4,letterSpacing:"1px"}}>🏟️ VENUE</div>
+          <input placeholder="e.g. Riverside Park" style={S.input} value={trainingVenue} onChange={e=>setTrainingVenue(e.target.value)} />
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#5a88a8",marginBottom:4,letterSpacing:"1px"}}>📅 DATE</div>
+          <input type="date" style={S.input} value={trainingDate} onChange={e=>setTrainingDate(e.target.value)} />
+        </div>
+      </div>
+      <div style={{...S.card,padding:"10px 14px",marginBottom:12}}>
+        <p style={{...S.sLbl,marginBottom:6}}>Points Guide</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 12px"}}>
+          {TRAINING_ACTIONS.map(a=>(
+            <div key={a.label} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#7aa8c8",padding:"2px 0"}}>
+              <span>{a.label}</span><span style={{color:a.color,fontWeight:"bold"}}>+{a.pts} pts</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {players.map(p=>{
+        const ts=trainingStats[p.id]||{};
+        const pts=TRAINING_ACTIONS.reduce((s,a)=>s+(ts[a.label]?a.pts:0),0);
+        return (
+          <div key={p.id} style={{...S.card,padding:"12px 14px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={S.avatar(getColor(p.id))}>{p.name[0]}</div>
+              <div style={{flex:1,fontWeight:"bold",fontSize:14,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+              {pts>0 && <div style={{color:"#C3B1E1",fontWeight:"bold",fontSize:13}}>+{pts} pts</div>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+              {TRAINING_ACTIONS.map(a=>{
+                const on=!!ts[a.label];
+                return (
+                  <div key={a.label} onClick={()=>toggleTraining(p.id,a)}
+                    style={{borderRadius:10,padding:"9px 7px",textAlign:"center",cursor:"pointer",background:on?a.color+"18":"rgba(255,255,255,0.03)",border:on?`1.5px solid ${a.color}`:"1px solid rgba(255,255,255,0.07)",WebkitTapHighlightColor:"transparent"}}>
+                    <div style={{fontSize:11,color:on?a.color:"#5a88a8",fontWeight:"bold",lineHeight:1.3}}>{a.label}</div>
+                    <div style={{fontSize:10,color:"#5a88a8",marginTop:2}}>+{a.pts} pts</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      <button style={{...S.btnFill("#C3B1E1"),width:"100%",marginTop:4,padding:13}} onClick={saveTraining}>Save Training Session</button>
+    </>)}
+
+    {/* ── MATCH MODE ── */}
+    {isAdmin && matchMode && (<>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <p style={{...S.sLbl,margin:0,color:"#A8E6CF"}}>🏟️ Log Match Stats</p>
+        <button style={S.btn("#7aa8c8",true)} onClick={()=>{setMatchMode(false);setMatchStats({});}}>Cancel</button>
+      </div>
+      <div style={{...S.card,display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:10,color:"#5a88a8",marginBottom:4,letterSpacing:"1px"}}>🆚 OPPOSITION</div>
+          <input placeholder="e.g. Riverside FC" style={S.input} value={opposition} onChange={e=>setOpposition(e.target.value)} />
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#5a88a8",marginBottom:4,letterSpacing:"1px"}}>📅 MATCH DATE</div>
+          <input type="date" style={S.input} value={matchDate} onChange={e=>setMatchDate(e.target.value)} />
+        </div>
+      </div>
+      <div style={{...S.card,padding:"10px 14px",marginBottom:12}}>
+        <p style={{...S.sLbl,marginBottom:6}}>Points Guide</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 12px"}}>
+          {[["🏟️ Attended Match","5 pts"],["⚽ Goal Scored","8 pts"],["🎯 Assist","5 pts"],["🧤 Clean Sheet","5 pts"]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#7aa8c8",padding:"2px 0"}}>
+              <span>{l}</span><span style={{color:"#A8E6CF",fontWeight:"bold"}}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {players.map(p=>{
+        const ms=matchStats[p.id]||{};
+        return (
+          <div key={p.id} style={{...S.card,padding:"12px 14px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={S.avatar(getColor(p.id))}>{p.name[0]}</div>
+              <div style={{fontWeight:"bold",fontSize:14,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              {[
+                {key:"attended",  icon:"🏟️",label:"Attended",   color:"#A8E6CF",bg:"rgba(168,230,207,0.15)"},
+                {key:"cleanSheet",icon:"🧤",label:"Clean Sheet",color:"#00C9FF",bg:"rgba(0,201,255,0.12)"},
+              ].map(t=>(
+                <div key={t.key} onClick={()=>setMatchStats(ms2=>({...ms2,[p.id]:{...ms2[p.id],[t.key]:!ms2[p.id]?.[t.key]}}))}
+                  style={{borderRadius:10,padding:"9px 8px",textAlign:"center",cursor:"pointer",background:ms[t.key]?t.bg:"rgba(255,255,255,0.03)",border:ms[t.key]?`1.5px solid ${t.color}`:"1px solid rgba(255,255,255,0.08)",WebkitTapHighlightColor:"transparent"}}>
+                  <div style={{fontSize:16}}>{t.icon}</div>
+                  <div style={{fontSize:11,color:ms[t.key]?t.color:"#5a88a8",fontWeight:"bold",marginTop:2}}>{t.label}</div>
+                  <div style={{fontSize:10,color:"#5a88a8"}}>+5 pts</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[{key:"goals",label:"⚽ GOALS (+8 pts)"},{key:"assists",label:"🎯 ASSISTS (+5 pts)"}].map(f=>(
+                <div key={f.key}>
+                  <div style={{fontSize:10,color:"#5a88a8",marginBottom:4,letterSpacing:"1px"}}>{f.label}</div>
+                  <input type="number" min="0" max="20" placeholder="0" inputMode="numeric"
+                    style={{...S.input,textAlign:"center"}}
+                    value={ms[f.key]||""}
+                    onChange={e=>setMatchStats(ms2=>({...ms2,[p.id]:{...ms2[p.id],[f.key]:e.target.value}}))} />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <button style={{...S.btnFill("#A8E6CF"),width:"100%",marginTop:4,padding:13}} onClick={saveMatch}>Save Match Stats</button>
+    </>)}
+
+    {/* ── PLAYER PROFILE ── */}
+    {!isAdmin && view==="profile" && renderProfile(myPlayer)}
+
+    {/* ── LEADERS BOARD ── */}
+    {view==="awards" && renderLeadersBoard()}
+
+    {/* ── SQUAD ── */}
+    {isAdmin && view==="squad" && (<>
+      <p style={S.sLbl}>Add Player</p>
+      <div style={{...S.card,display:"flex",flexDirection:"column",gap:8}}>
+        <input placeholder="Player name" style={S.input} value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPlayer()} />
+        <div style={{display:"flex",gap:8}}>
+          <input placeholder="Shirt #" style={{...S.input,width:80}} inputMode="numeric" value={newNum} onChange={e=>setNewNum(e.target.value)} />
+          <button style={{...S.btnFill("#A8E6CF"),flex:1}} onClick={addPlayer}>Add Player</button>
+        </div>
+      </div>
+      <p style={S.sLbl}>Current Squad ({players.length})</p>
+      {players.map(p=>(
+        <div key={p.id} style={{...S.pRow(false),cursor:"default"}}>
+          <div style={S.avatar(getColor(p.id))}>{p.name[0]}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:"bold",fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              {p.name} <span style={{color:"#5a88a8"}}>#{p.number}</span>
+            </div>
+            <div style={{fontSize:11,color:"#5a88a8"}}>
+              {p.stats.points}pts · ⚽{p.stats.goals} · 🎯{p.stats.assists} · 🧤{p.stats.cleanSheets||0} · ID:{p.id}
+            </div>
+          </div>
+          <button style={S.btn("#FF6B6B",true)} onClick={()=>removePlayer(p.id)}>✕</button>
+        </div>
+      ))}
+      <div style={{borderTop:"1px solid rgba(0,201,255,0.1)",margin:"16px 0"}} />
+      <p style={S.sLbl}>Assign Awards</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+        {[
+          {type:"potm",color:"#FFD700",label:"Player of Match",current:potmId},
+          {type:"totw",color:"#00C9FF",label:"Trainer of Week",current:totwId},
+        ].map(a=>(
+          <div key={a.type} style={{...S.card,textAlign:"center",borderColor:`${a.color}33`,marginBottom:0}}>
+            {a.current && <div style={{color:a.color,fontSize:12,fontWeight:"bold",marginBottom:8}}>{players.find(p=>p.id===a.current)?.name}</div>}
+            <button style={{...S.btn(a.color,true),width:"100%"}} onClick={()=>setAwardModal(a.type)}>{a.label}</button>
+          </div>
+        ))}
+      </div>
+      <div style={{borderTop:"1px solid rgba(0,201,255,0.1)",margin:"0 0 16px"}} />
+      <p style={S.sLbl}>User Accounts</p>
+      <div style={{...S.card,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{fontSize:11,color:"#5a88a8",marginBottom:2}}>Link to a Player ID for player access, or leave blank for admin.</div>
+        <input placeholder="Username" style={S.input} autoCapitalize="none" value={newUsername} onChange={e=>setNewUsername(e.target.value)} />
+        <input placeholder="Password" type="password" style={S.input} value={newPassword} onChange={e=>setNewPassword(e.target.value)} />
+        <input placeholder="Player ID (optional)" style={S.input} inputMode="numeric" value={newLinkedId} onChange={e=>setNewLinkedId(e.target.value)} />
+        <button style={{...S.btnFill("#C3B1E1"),width:"100%"}} onClick={addUserAccount}>Create Account</button>
+      </div>
+      {users.map(u=>(
+        <div key={u.id} style={{...S.pRow(false),cursor:"default"}}>
+          <div style={S.avatar(u.role==="admin"?"#00C9FF":"#FF6B9D")}>{u.username[0].toUpperCase()}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:"bold",fontSize:13}}>{u.username}</div>
+            <div style={{fontSize:11,color:"#5a88a8"}}>{u.role==="admin"?"Admin":"Player"}{u.playerId?` · ID:${u.playerId}`:""}</div>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button style={S.btn("#FFD700",true)} onClick={()=>{setChangePwFor(u);setChangePwNew("");setChangePwErr("");}}>🔑</button>
+            {u.id!=="admin" && <button style={S.btn("#FF6B6B",true)} onClick={()=>removeUser(u.id)}>✕</button>}
+          </div>
+        </div>
+      ))}
+    </>)}
+
+  </div>
+
+  {/* BOTTOM NAV */}
+  <div style={S.bnav}>
+    {NAV.map(n=>(
+      <div key={n.id} style={S.nItem(view===n.id&&!inEvent)}
+        onClick={()=>{setView(n.id);setSelected(null);setMatchMode(false);setTrainingMode(false);}}>
+        <span style={{fontSize:18,lineHeight:1}}>{n.icon}</span>
+        <span style={S.nLabel(view===n.id&&!inEvent)}>{n.label}</span>
+      </div>
+    ))}
+  </div>
+
+  {/* AWARD MODAL */}
+  {awardModal && (
+    <div style={S.modal} onClick={()=>setAwardModal(false)}>
+      <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+        <div style={S.handle} />
+        <p style={{...S.sLbl,fontSize:13,color:awardModal==="potm"?"#FFD700":"#00C9FF",marginBottom:4}}>
+          {awardModal==="potm"?"Player of the Match":"Trainer of the Week"}
+        </p>
+        <p style={{color:"#5a88a8",fontSize:12,marginBottom:14}}>Tap to select winner</p>
+        {players.map(p=>(
+          <div key={p.id} style={{...S.pRow(false),marginBottom:8}} onClick={()=>assignAward(p.id,awardModal)}>
+            <div style={S.avatar(getColor(p.id))}>{p.name[0]}</div>
+            <div style={{fontWeight:"bold",flex:1}}>{p.name}</div>
+            <div style={{color:"#00C9FF",fontWeight:"bold"}}>{p.stats.points} pts</div>
+          </div>
+        ))}
+        <button style={{...S.btn("#5a88a8"),width:"100%",marginTop:8,padding:12}} onClick={()=>setAwardModal(false)}>Cancel</button>
+      </div>
+    </div>
+  )}
+
+  {/* CHANGE PASSWORD MODAL */}
+  {changePwFor && (
+    <div style={S.modal} onClick={()=>setChangePwFor(null)}>
+      <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+        <div style={S.handle} />
+        <p style={{...S.sLbl,fontSize:13,color:"#FFD700",marginBottom:4}}>🔑 Change Password</p>
+        <p style={{color:"#5a88a8",fontSize:12,marginBottom:14}}>For: <strong style={{color:"#e8f4f8"}}>{changePwFor.username}</strong></p>
+        <input placeholder="New password (min 4 chars)" type="password" style={{...S.input,marginBottom:8}}
+          value={changePwNew} onChange={e=>{setChangePwNew(e.target.value);setChangePwErr("");}} />
+        {changePwErr && <div style={{fontSize:12,color:"#FF6B6B",marginBottom:8}}>{changePwErr}</div>}
+        <button style={{...S.btnFill("#FFD700"),width:"100%",marginBottom:10}} onClick={()=>saveChangePw(changePwFor.id)}>Save Password</button>
+        <button style={{...S.btn("#5a88a8"),width:"100%",padding:12}} onClick={()=>setChangePwFor(null)}>Cancel</button>
+      </div>
+    </div>
+  )}
+
+  {/* TOAST */}
+  {toast && (
+    <div style={{position:"fixed",bottom:76,left:"50%",transform:"translateX(-50%)",background:"#07101f",border:`2px solid ${toast.color}`,borderRadius:30,padding:"10px 22px",color:toast.color,fontWeight:"bold",fontSize:13,zIndex:200,boxShadow:`0 4px 20px ${toast.color}44`,whiteSpace:"nowrap",maxWidth:"90%"}}>
+      {toast.msg}
+    </div>
+  )}
+</div>
+```
+
+);
+}
